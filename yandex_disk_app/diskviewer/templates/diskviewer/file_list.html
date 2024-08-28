@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yandex Disk File Viewer</title>
+</head>
+<body>
+    <h1>Files on Yandex Disk</h1>
+    <ul>
+        {% for file in files %}
+            <li>
+                {{ file.name }} - 
+                {% if file.type == 'file' %}
+                    <a href="{% url 'download_file' %}?public_key={{ public_key }}&file_path={{ file.path }}" download>Download</a>
+                {% else %}
+                    <a href="{% url 'file_list' %}?public_key={{ public_key }}&path={{ file.path }}">Open</a>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+    <a href="/">Back</a>
+</body>
+</html>

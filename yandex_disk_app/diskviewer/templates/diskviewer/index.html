@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yandex Disk File Viewer</title>
+</head>
+<body>
+    <h1>Yandex Disk File Viewer</h1>
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% endif %}
+    <form method="get" action="">
+        <label for="public_key">Enter Public Key:</label>
+        <input type="text" id="public_key" name="public_key" required>
+        <button type="submit">View Files</button>
+    </form>
+</body>
+</html>
