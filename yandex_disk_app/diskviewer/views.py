@@ -1,10 +1,12 @@
 import requests
 import zipfile
+import time
 from io import BytesIO
 from django.shortcuts import render
 from django.http import FileResponse, Http404
 from django.views import View
 from django.core.cache import cache
+from requests.exceptions import RequestException
 
 
 class FileListView(View):
@@ -56,7 +58,6 @@ class DownloadFileView(View):
             # Fetch the download link for the file from Yandex Disk using OAuth
             headers = {
                 'Accept': 'application/json',
-                'Authorization': f'OAuth {OAUTH_TOKEN}',
             }
             response = requests.get(
                 f'https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key={public_key}&path={file_path}',
@@ -83,21 +84,13 @@ class DownloadMultipleFilesView(View):
             return render(request, 'diskviewer/index.html', {'error': 'Please provide a public key and select files to download.'})
 
         try:
+            all_file_paths = []
+            for file_path in file_paths:
+                all_file_paths.extend(self.gather_file_paths(public_key, file_path))
+
             zip_buffer = BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-                for file_path in file_paths:
-                    headers = {
-                        'Accept': 'application/json',
-                    }
-                    response = requests.get(
-                        f'https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key={public_key}&path={file_path}',
-                        headers=headers
-                    )
-                    response.raise_for_status()
-                    download_url = response.json()['href']
-                    file_response = requests.get(download_url)
-                    file_response.raise_for_status()
-                    zip_file.writestr(file_path, file_response.content)
+                self.add_files_to_zip(zip_file, all_file_paths)
 
             zip_buffer.seek(0)
             response = FileResponse(zip_buffer, as_attachment=True, filename='files.zip')
@@ -105,3 +98,51 @@ class DownloadMultipleFilesView(View):
 
         except requests.exceptions.RequestException as e:
             return render(request, 'diskviewer/index.html', {'error': str(e)})
+
+    def gather_file_paths(self, public_key, file_path, base_path='', retries=3, backoff_factor=0.3):
+        headers = {
+            'Accept': 'application/json',
+        }
+        
+        for attempt in range(retries):
+            try:
+                response = requests.get(
+                    f'https://cloud-api.yandex.net/v1/disk/public/resources?public_key={public_key}&path={file_path}',
+                    headers=headers
+                )
+                response.raise_for_status()
+                data = response.json()
+                break
+            except RequestException as e:
+                if attempt < retries - 1 and response.status_code == 429:
+                    sleep_time = backoff_factor * (2 ** attempt)
+                    print(f"Rate limit exceeded. Retrying in {sleep_time} seconds...")
+                    time.sleep(sleep_time)
+                else:
+                    raise e
+
+        file_paths = []
+        if data['type'] == 'dir':
+            dir_name = f"{base_path}/{data['name']}" if base_path else data['name']
+            for item in data['_embedded']['items']:
+                item_path = item['path']
+                relative_path = f"{dir_name}/{item['name']}"
+                file_paths.extend(self.gather_file_paths(public_key, item_path, dir_name, retries, backoff_factor))
+        else:
+            download_response = requests.get(
+                f'https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key={public_key}&path={file_path}',
+                headers=headers
+            )
+            download_response.raise_for_status()
+            download_url = download_response.json()['href']
+            file_name = f"{base_path}/{data['name']}" if base_path else data['name']
+            file_paths.append((file_name, download_url))
+
+        return file_paths
+
+    def add_files_to_zip(self, zip_file, file_paths):
+        for file_name, download_url in file_paths:
+            file_response = requests.get(download_url)
+            file_response.raise_for_status()
+            print(f"Adding file to zip: {file_name}")  # Debug statement
+            zip_file.writestr(file_name, file_response.content)
