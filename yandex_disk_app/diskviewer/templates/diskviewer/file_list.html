@@ -1,41 +1,117 @@
+{% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Yandex Disk File Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Файлы на Яндекс.Диске</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .file-icon {
+            position: relative;
+        }
+        .file-icon .download-icon,
+        .file-icon .checkmark {
+            position: absolute;
+            top: 5px;
+            font-size: 1.2em;
+            cursor: pointer;
+        }
+        .file-icon .download-icon {
+            right: 5px;
+        }
+        .file-icon .checkmark {
+            left: 5px;
+        }
+        .list-view .file-icon {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .list-view .file-icon .icon {
+            margin-right: 10px;
+        }
+    </style>
 </head>
-<body>
-    <h1>Files on Yandex Disk</h1>
-    <form method="get">
-        <input type="hidden" name="public_key" value="{{ public_key }}">
-        <input type="hidden" name="path" value="{{ request.GET.path }}">
-        <label for="file_type">Filter by type:</label>
-        <select name="file_type" id="file_type">
-            <option value="">All</option>
-            <option value="file" {% if request.GET.file_type == 'file' %}selected{% endif %}>Files</option>
-            <option value="dir" {% if request.GET.file_type == 'dir' %}selected{% endif %}>Directories</option>
-        </select>
-        <button type="submit">Filter</button>
-    </form>
-    <form method="post" action="{% url 'download_multiple_files' %}">
+<body class="bg-gray-100">
+    <div class="container mx-auto p-6">
+        <h1 class="text-3xl font-bold mb-6">Файлы на Яндекс.Диске</h1>
+        
+        <form method="get" action="{% url 'file_list' %}" class="mb-4">
+            <label for="file-type" class="mr-2">Фильтровать по типу:</label>
+            <select id="file-type" name="file_type" class="border rounded p-1">
+                <option value="all" {% if request.GET.file_type == 'all' %}selected{% endif %}>Все файлы</option>
+                <option value="dir" {% if request.GET.file_type == 'dir' %}selected{% endif %}>Директории</option>
+                <option value="file" {% if request.GET.file_type == 'file' %}selected{% endif %}>Файлы</option>
+            </select>
+            <input type="hidden" name="public_key" value="{{ public_key }}">
+            <input type="hidden" name="path" value="{{ path }}">
+            <button type="submit" class="bg-blue-500 text-white px-4 py-1 rounded ml-2">Фильтровать</button>
+        </form>
+
+        <div class="mb-4">
+            <label for="icon-size" class="mr-2">Размер иконок:</label>
+            <select id="icon-size" class="border rounded p-1">
+                <option value="small">Маленькие</option>
+                <option value="medium">Средние</option>
+                <option value="large">Большие</option>
+            </select>
+        </div>
+
         {% csrf_token %}
-        <input type="hidden" name="public_key" value="{{ public_key }}">
-        <input type="hidden" name="file_type" value="{{ request.GET.file_type }}">
-        <ul>
-            {% for file in files %}
-                <li>
-                    <input type="checkbox" name="file_paths" value="{{ file.path }}">
-                    {{ file.name }} - 
-                    {% if file.type == 'file' %}
-                        <a href="{% url 'download_file' %}?public_key={{ public_key }}&file_path={{ file.path }}" download>Download</a>
-                    {% else %}
-                        <a href="{% url 'file_list' %}?public_key={{ public_key }}&path={{ file.path }}&file_type={{ request.GET.file_type }}">Open</a>
+
+        <form id="download-form" method="post" action="{% url 'download_multiple_files' %}">
+            {% csrf_token %}
+            <input type="hidden" name="public_key" value="{{ public_key }}">
+            <div id="file-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {% for file in files %}
+                <div class="file-icon bg-white p-4 rounded shadow">
+                    <a href="{% url 'download_file' %}?public_key={{ public_key }}&file_path={{ file.path }}" class="download-icon" title="Скачать файл">⬇️</a>
+                    <input type="checkbox" name="file_paths" value="{{ file.path }}" class="checkmark" title="Выбрать для скачивания">
+                    <div class="icon text-4xl mb-2">{% if file.type == 'dir' %}📁{% else %}📄{% endif %}</div>
+                    <p class="file-name text-sm truncate">{{ file.name }}</p>
+                    {% if file.type == 'dir' %}
+                    <a href="{% url 'file_list' %}?public_key={{ public_key }}&path={{ file.path }}&file_type={{ request.GET.file_type }}" class="text-blue-500 hover:underline text-xs">Открыть</a>
                     {% endif %}
-                </li>
-            {% endfor %}
-        </ul>
-        <button type="submit">Download Selected Files</button>
-    </form>
-    <a href="/">Back</a>
+                </div>
+                {% endfor %}
+            </div>
+            <button type="submit" class="mt-6 bg-green-500 text-white px-4 py-2 rounded">Скачать выбранные файлы</button>
+        </form>
+
+        <a href="javascript:history.back()" class="mt-4 inline-block text-blue-500 hover:underline">Назад</a>
+        <a href="/" class="mt-4 ml-4 inline-block text-red-500 hover:underline">Выход</a>
+    </div>
+
+    <script>
+        document.getElementById('icon-size').addEventListener('change', function(e) {
+            const fileList = document.getElementById('file-list');
+            const iconSize = e.target.value;
+            
+            if (iconSize === 'small') {
+                fileList.className = 'list-view';
+                fileList.querySelectorAll('.file-icon').forEach(icon => {
+                    icon.className = 'file-icon flex items-center p-2 bg-white rounded shadow';
+                    icon.querySelector('.icon').className = 'icon text-2xl mr-2';
+                    icon.querySelector('.file-name').className = 'file-name text-sm flex-grow';
+                });
+            } else if (iconSize === 'medium') {
+                fileList.className = 'grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4';
+                fileList.querySelectorAll('.file-icon').forEach(icon => {
+                    icon.className = 'file-icon bg-white p-3 rounded shadow text-center';
+                    icon.querySelector('.icon').className = 'icon text-3xl mb-2';
+                    icon.querySelector('.file-name').className = 'file-name text-xs truncate';
+                });
+            } else {
+                fileList.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4';
+                fileList.querySelectorAll('.file-icon').forEach(icon => {
+                    icon.className = 'file-icon bg-white p-4 rounded shadow text-center';
+                    icon.querySelector('.icon').className = 'icon text-4xl mb-2';
+                    icon.querySelector('.file-name').className = 'file-name text-sm truncate';
+                });
+            }
+        });
+    </script>
 </body>
 </html>

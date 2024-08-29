@@ -1,18 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Yandex Disk File Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Просмотр файлов Яндекс.Диска</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
 </head>
-<body>
-    <h1>Yandex Disk File Viewer</h1>
-    {% if error %}
-        <p style="color: red;">{{ error }}</p>
-    {% endif %}
-    <form method="get" action="">
-        <label for="public_key">Enter Public Key:</label>
-        <input type="text" id="public_key" name="public_key" required>
-        <button type="submit">View Files</button>
-    </form>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
+        <h1 class="text-2xl font-bold mb-6 text-center">Просмотр файлов Яндекс.Диска</h1>
+
+        {% if error %}
+        <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert">
+            <p>{{ error }}</p>
+        </div>
+        {% endif %}
+
+        <p class="mb-4 text-gray-700">Введите публичный ключ для доступа к файлам на Яндекс.Диске.</p>
+
+        <form action="{% url 'file_list' %}" method="get" class="space-y-4">
+            <div>
+                <label for="public-key" class="block text-sm font-medium text-gray-700">Публичный ключ:</label>
+                <input type="text" id="public-key" name="public_key" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+            </div>
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                Просмотреть файлы
+            </button>
+        </form>
+    </div>
 </body>
 </html>

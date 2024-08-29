@@ -8,7 +8,6 @@ from django.views import View
 from django.core.cache import cache
 from requests.exceptions import RequestException
 
-
 class FileListView(View):
     def get(self, request):
         public_key = request.GET.get('public_key', '')
@@ -23,7 +22,6 @@ class FileListView(View):
 
         if not data:
             try:
-                # Fetch the file list from Yandex Disk using OAuth
                 headers = {
                     'Accept': 'application/json',
                 }
@@ -45,17 +43,16 @@ class FileListView(View):
             return render(request, 'diskviewer/file_list.html', {'files': files, 'public_key': public_key})
         else:
             return render(request, 'diskviewer/index.html', {'error': 'No files found.'})
-        
+
 class DownloadFileView(View):
     def get(self, request):
         public_key = request.GET.get('public_key', '')
         file_path = request.GET.get('file_path', '')
-        
+
         if not public_key or not file_path:
             return Http404("File not found.")
-        
+
         try:
-            # Fetch the download link for the file from Yandex Disk using OAuth
             headers = {
                 'Accept': 'application/json',
             }
@@ -66,7 +63,6 @@ class DownloadFileView(View):
             response.raise_for_status()
             download_link = response.json().get('href')
 
-            # Download the file from the provided link
             file_response = requests.get(download_link, stream=True)
             file_response.raise_for_status()
 
@@ -90,36 +86,35 @@ class DownloadMultipleFilesView(View):
 
             zip_buffer = BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-                self.add_files_to_zip(zip_file, all_file_paths)
+                skipped_files = self.add_files_to_zip(zip_file, all_file_paths)
 
             zip_buffer.seek(0)
             response = FileResponse(zip_buffer, as_attachment=True, filename='files.zip')
+            if skipped_files:
+                response['Content-Disposition'] += f"; filename*=UTF-8''files_with_skipped.zip"
+                response['X-Skipped-Files'] = ', '.join(skipped_files)
             return response
 
         except requests.exceptions.RequestException as e:
             return render(request, 'diskviewer/index.html', {'error': str(e)})
 
-    def gather_file_paths(self, public_key, file_path, base_path='', retries=3, backoff_factor=0.3):
+    def gather_file_paths(self, public_key, file_path, base_path=''):
         headers = {
             'Accept': 'application/json',
         }
-        
-        for attempt in range(retries):
-            try:
-                response = requests.get(
-                    f'https://cloud-api.yandex.net/v1/disk/public/resources?public_key={public_key}&path={file_path}',
-                    headers=headers
-                )
-                response.raise_for_status()
-                data = response.json()
-                break
-            except RequestException as e:
-                if attempt < retries - 1 and response.status_code == 429:
-                    sleep_time = backoff_factor * (2 ** attempt)
-                    print(f"Rate limit exceeded. Retrying in {sleep_time} seconds...")
-                    time.sleep(sleep_time)
-                else:
-                    raise e
+
+        try:
+            response = requests.get(
+                f'https://cloud-api.yandex.net/v1/disk/public/resources?public_key={public_key}&path={file_path}',
+                headers=headers
+            )
+            print(f"Response status code for {file_path}: {response.status_code}")
+            print(f"Response content for {file_path}: {response.content}")
+            response.raise_for_status()
+            data = response.json()
+        except RequestException as e:
+            print(f"Error accessing {file_path}: {e}")
+            raise e
 
         file_paths = []
         if data['type'] == 'dir':
@@ -127,7 +122,7 @@ class DownloadMultipleFilesView(View):
             for item in data['_embedded']['items']:
                 item_path = item['path']
                 relative_path = f"{dir_name}/{item['name']}"
-                file_paths.extend(self.gather_file_paths(public_key, item_path, dir_name, retries, backoff_factor))
+                file_paths.extend(self.gather_file_paths(public_key, item_path, dir_name))
         else:
             download_response = requests.get(
                 f'https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key={public_key}&path={file_path}',
@@ -141,8 +136,22 @@ class DownloadMultipleFilesView(View):
         return file_paths
 
     def add_files_to_zip(self, zip_file, file_paths):
+        skipped_files = []
         for file_name, download_url in file_paths:
-            file_response = requests.get(download_url)
-            file_response.raise_for_status()
-            print(f"Adding file to zip: {file_name}")  # Debug statement
-            zip_file.writestr(file_name, file_response.content)
+            try:
+                file_response = requests.get(download_url)
+                file_response.raise_for_status()
+                print(f"Adding file to zip: {file_name}")  # Debug statement
+                zip_file.writestr(file_name, file_response.content)
+                time.sleep(1)  # Adding a delay of 1 second between requests
+            except requests.exceptions.RequestException as e:
+                if file_response.status_code == 429:
+                    print(f"Skipping file due to download limit exceeded: {file_name}")
+                    skipped_files.append(file_name)
+                else:
+                    print(f"Error downloading {file_name}: {e}")
+                    print(f"Response content: {file_response.content}")
+                    print(f"Response headers: {file_response.headers}")
+            except Exception as e:
+                print(f"Error adding {file_name} to zip: {e}")
+        return skipped_files
